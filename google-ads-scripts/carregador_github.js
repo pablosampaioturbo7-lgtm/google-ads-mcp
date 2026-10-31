@@ -21,3 +21,14 @@ function main() {
   Logger.log('Executando ' + SCRIPT + ' (' + codigo.length + ' caracteres) direto do GitHub.');
   new Function(codigo + '\nmain();')();
 }
+
+/**
+ * Não apague. O Google Ads define as permissões do script lendo o código colado aqui.
+ * Esta função nunca é chamada; ela só declara os serviços que o código do GitHub usa
+ * (planilhas e acesso à internet), para o botão Autorizar pedir essas permissões.
+ */
+function declararPermissoes_() {
+  SpreadsheetApp.openByUrl('https://docs.google.com/spreadsheets/d/1UREbDc2c3uIqYm0vU6TPEH4ntFzzlUCLwS3-w_rBJqU/edit');
+  UrlFetchApp.fetch('https://raw.githubusercontent.com/');
+}
+
