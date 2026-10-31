@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "google-ads": {
+      "command": "uv",
+      "args": ["run", "--quiet", "--project", ".", "python", "-m", "ads_mcp.local_launcher"]
+    }
+  }
+}
