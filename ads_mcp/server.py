@@ -29,6 +29,7 @@ from ads_mcp.resources import (
     release_notes,
     segments,
 )  # noqa: F401
+from ads_mcp import pages  # noqa: F401  Public branding pages for OAuth
 
 
 def run_server() -> None:
