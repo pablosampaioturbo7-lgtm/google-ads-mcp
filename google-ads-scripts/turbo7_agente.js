@@ -145,7 +145,7 @@ function processarFila(ss, agora, previa) {
     if (!c.id || feitos[c.id]) return;
     var resultado;
     try {
-      var it = AdsManagerApp.accounts().withIds([String(c.conta_id).replace(/\D/g, '')]).get();
+      var it = AdsManagerApp.accounts().withIds([formatarCid(c.conta_id)]).get();
       if (!it.hasNext()) resultado = 'ERRO: conta fora da MCC';
       else { AdsManagerApp.select(it.next()); resultado = executarComando(c); }
     } catch (e) { resultado = 'ERRO: ' + e; }
@@ -238,7 +238,7 @@ function aplicarAcoes(ss, agora) {
     (porConta[cid] = porConta[cid] || []).push(i);
   }
   for (var cid in porConta) {
-    var it = AdsManagerApp.accounts().withIds([cid]).get();
+    var it = AdsManagerApp.accounts().withIds([formatarCid(cid)]).get();
     if (!it.hasNext()) { porConta[cid].forEach(function (i) { marcar(aba, i, 'ERRO: conta fora da MCC', agora); }); continue; }
     AdsManagerApp.select(it.next());
     porConta[cid].forEach(function (i) {
@@ -267,6 +267,12 @@ function executar(acao, campanhaId, valor) {
     c.addNegativeKeyword('[' + String(valor).replace(/[\[\]"]/g, '') + ']'); return 'OK';
   }
   return 'BLOQUEADO: acao desconhecida';
+}
+
+// ID no formato 123-456-7890, exigido pelo AdsManagerApp.
+function formatarCid(id) {
+  var d = String(id).replace(/\D/g, '');
+  return d.slice(0, 3) + '-' + d.slice(3, 6) + '-' + d.slice(6);
 }
 
 function buscarCampanha(id) {
