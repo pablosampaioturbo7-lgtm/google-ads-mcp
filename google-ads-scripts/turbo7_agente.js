@@ -34,19 +34,36 @@ var CAB_ACOES = ['id', 'conta_id', 'campanha_id', 'acao', 'valor', 'motivo', 'ap
 
 // Saída dos dados: n8n (WEBHOOK_URL definido no carregador, sem permissão extra) ou planilha.
 function abrirSaida() {
+  if (typeof GITHUB_TOKEN !== 'undefined' && GITHUB_TOKEN && typeof GITHUB_REPO !== 'undefined' && GITHUB_REPO)
+    return new SaidaWebhook(null, { token: GITHUB_TOKEN, repo: GITHUB_REPO });
   if (typeof WEBHOOK_URL !== 'undefined' && WEBHOOK_URL) return new SaidaWebhook(WEBHOOK_URL);
   return SpreadsheetApp.openByUrl(CONFIG.PLANILHA_URL);
 }
 
-function SaidaWebhook(url) { this.url = url; this.abas = {}; }
+function SaidaWebhook(url, github) { this.url = url; this.github = github || null; this.buffer = []; this.abas = {}; }
 SaidaWebhook.prototype.getSheetByName = function (n) { return this.abas[n] || null; };
 SaidaWebhook.prototype.insertSheet = function (n) { return (this.abas[n] = new AbaWebhook(this, n)); };
 SaidaWebhook.prototype.enviar = function (registros) {
+  if (this.github) { this.buffer = this.buffer.concat(registros); return; }
   for (var i = 0; i < registros.length; i += 200) {
     UrlFetchApp.fetch(this.url, { method: 'post', contentType: 'application/json',
       payload: JSON.stringify({ registros: registros.slice(i, i + 200) }), muteHttpExceptions: true });
   }
 };
+// GitHub: grava um arquivo JSON por execução no repositório privado de resultados.
+SaidaWebhook.prototype.finalizar = function (agora) {
+  if (!this.github || !this.buffer.length) return;
+  var nome = 'resultados/' + agora.replace(/[: ]/g, '-') + '-' + new Date().getTime() + '.json';
+  var r = UrlFetchApp.fetch('https://api.github.com/repos/' + this.github.repo + '/contents/' + nome, {
+    method: 'put', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { Authorization: 'Bearer ' + this.github.token, Accept: 'application/vnd.github+json' },
+    payload: JSON.stringify({ message: 'Resultados Google Ads ' + agora,
+      content: Utilities.base64Encode(JSON.stringify({ registros: this.buffer }, null, 1), Utilities.Charset.UTF_8) })
+  });
+  Logger.log('GitHub: ' + nome + ' -> HTTP ' + r.getResponseCode());
+  if (r.getResponseCode() >= 300) Logger.log(r.getContentText().slice(0, 300));
+};
+
 function AbaWebhook(saida, nome) { this.saida = saida; this.nome = nome; this.linhas = []; this.cab = null; }
 AbaWebhook.prototype.getLastRow = function () { return this.linhas.length; };
 AbaWebhook.prototype.clearContents = function () { this.linhas = []; this.cab = null; };
@@ -83,6 +100,7 @@ function main() {
   var semHistorico = !(ss instanceof SaidaWebhook) && !ss.getSheetByName('Campanhas');
   if (forcar || hora === CONFIG.HORA_EXPORTACAO || semHistorico) exportar(ss, agora);
   log(ss, agora, '-', 'EXECUCAO', previa ? 'previa' : 'execucao concluida');
+  if (ss.finalizar) ss.finalizar(agora);
 }
 
 function exportar(ss, agora) {
