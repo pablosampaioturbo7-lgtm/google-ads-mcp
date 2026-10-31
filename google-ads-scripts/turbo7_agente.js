@@ -17,7 +17,11 @@ var CONFIG = {
   APLICAR_ACOES: false,          // true = executa ações aprovadas na aba "Acoes"
   VARIACAO_MAX_ORCAMENTO: 0.20,  // teto de mudança de orçamento por ação (20%)
   CONTAS_EXCLUIDAS: [],          // IDs (só números) que o script deve ignorar
-  TERMOS_POR_CONTA: 30
+  TERMOS_POR_CONTA: 30,
+  // Fila de comandos no GitHub: o agente escreve, este script executa (agende "A cada hora").
+  FILA_URL: 'https://raw.githubusercontent.com/pablosampaioturbo7-lgtm/google-ads-mcp/turbo7/google-ads-scripts/fila/fila.json',
+  EXECUTAR_FILA_GITHUB: true,
+  HORA_EXPORTACAO: 6             // exportação completa de dados 1x por dia, nesta hora
 };
 
 var CAB_CAMPANHAS = ['atualizado_em', 'periodo', 'conta_id', 'conta', 'campanha_id', 'campanha',
@@ -30,7 +34,14 @@ var CAB_ACOES = ['id', 'conta_id', 'campanha_id', 'acao', 'valor', 'motivo', 'ap
 
 function main() {
   var ss = SpreadsheetApp.openByUrl(CONFIG.PLANILHA_URL);
-  var agora = Utilities.formatDate(new Date(), AdsApp.currentAccount().getTimeZone(), 'yyyy-MM-dd HH:mm');
+  var fuso = AdsApp.currentAccount().getTimeZone();
+  var agora = Utilities.formatDate(new Date(), fuso, 'yyyy-MM-dd HH:mm');
+  if (CONFIG.EXECUTAR_FILA_GITHUB) processarFila(ss, agora);
+  var hora = Number(Utilities.formatDate(new Date(), fuso, 'H'));
+  if (hora === CONFIG.HORA_EXPORTACAO || !ss.getSheetByName('Campanhas')) exportar(ss, agora);
+}
+
+function exportar(ss, agora) {
   var linhas = { campanhas: [], diario: [], termos: [], contas: [] };
 
   var contas = AdsManagerApp.accounts().get();
@@ -57,6 +68,59 @@ function main() {
   prepararAcoes(ss);
   if (CONFIG.APLICAR_ACOES) aplicarAcoes(ss, agora);
   log(ss, agora, '-', 'OK', linhas.contas.length + ' contas exportadas');
+}
+
+// ---------- Fila de comandos vinda do GitHub ----------
+function processarFila(ss, agora) {
+  var r = UrlFetchApp.fetch(CONFIG.FILA_URL + '?v=' + new Date().getTime(), { muteHttpExceptions: true });
+  if (r.getResponseCode() !== 200) { log(ss, agora, '-', 'FILA_INDISPONIVEL', 'HTTP ' + r.getResponseCode()); return; }
+  var fila = JSON.parse(r.getContentText()).comandos || [];
+  var aba = ss.getSheetByName('Execucoes') || ss.insertSheet('Execucoes');
+  if (aba.getLastRow() === 0) aba.appendRow(['comando_id', 'conta_id', 'acao', 'resultado', 'executado_em']);
+  var feitos = {};
+  aba.getDataRange().getValues().forEach(function (l) { feitos[l[0]] = true; });
+  fila.forEach(function (c) {
+    if (!c.id || feitos[c.id]) return;
+    var resultado;
+    try {
+      var it = AdsManagerApp.accounts().withIds([String(c.conta_id).replace(/\D/g, '')]).get();
+      if (!it.hasNext()) resultado = 'ERRO: conta fora da MCC';
+      else { AdsManagerApp.select(it.next()); resultado = executarComando(c); }
+    } catch (e) { resultado = 'ERRO: ' + e; }
+    aba.appendRow([c.id, c.conta_id, c.acao, resultado, agora]);
+  });
+}
+
+function executarComando(c) {
+  var acao = String(c.acao).toUpperCase();
+  if (acao === 'CRIAR_GRUPO_RSA') return criarGrupoRsa(c);
+  return executar(acao, String(c.campanha_id), c.valor);
+}
+
+function criarGrupoRsa(c) {
+  var camp = buscarCampanha(c.campanha_id);
+  if (!camp) return 'ERRO: campanha nao encontrada';
+  if (camp.adGroups().withCondition("ad_group.name = '" + c.grupo + "'").get().hasNext()) return 'IGNORADO: grupo ja existe';
+  if ((c.titulos || []).some(function (t) { return t.length > 30; })) return 'BLOQUEADO: titulo acima de 30';
+  if ((c.descricoes || []).some(function (d) { return d.length > 90; })) return 'BLOQUEADO: descricao acima de 90';
+  var url = c.url_final;
+  if (!url) {
+    var ads = camp.ads().withCondition("ad_group_ad.status = 'ENABLED'").get();
+    while (!url && ads.hasNext()) url = ads.next().urls().getFinalUrl();
+  }
+  if (!url) return 'BLOQUEADO: sem link final';
+  var op = camp.newAdGroupBuilder().withName(c.grupo).withCpc(c.cpc_max || 3)
+    .withStatus(c.ativar ? 'ENABLED' : 'PAUSED').build();
+  if (!op.isSuccessful()) return 'ERRO grupo: ' + op.getErrors().join('; ');
+  var g = op.getResult(), erros = [];
+  (c.palavras || []).forEach(function (k) {
+    var r = g.newKeywordBuilder().withText(k).build();
+    if (!r.isSuccessful()) erros.push(k + ': ' + r.getErrors().join(','));
+  });
+  var ad = g.newAd().responsiveSearchAdBuilder().withHeadlines(c.titulos).withDescriptions(c.descricoes)
+    .withFinalUrl(url).build();
+  if (!ad.isSuccessful()) erros.push('anuncio: ' + ad.getErrors().join(','));
+  return (erros.length ? 'PARCIAL: ' + erros.join(' | ') : 'OK') + ' (grupo ' + (c.ativar ? 'ATIVO' : 'PAUSADO') + ', link ' + url + ')';
 }
 
 function coletarCampanhas(agora, contaId, contaNome, periodo, saida) {

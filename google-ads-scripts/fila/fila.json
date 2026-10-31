@@ -1,0 +1,16 @@
+{
+  "_leia": "Fila de comandos do agente Turbo7. O script da MCC executa cada comando uma unica vez (pelo id) e registra o resultado na aba Execucoes da planilha. So entram aqui comandos aprovados no chat.",
+  "comandos": [
+    {
+      "id": "2026-10-31-maison-teste-rsa-01",
+      "conta_id": "1661166125",
+      "acao": "CRIAR_GRUPO_RSA",
+      "campanha_id": "23294274719",
+      "grupo": "[TESTE AGENTE] PLANEJADOS 31/10/26",
+      "ativar": true,
+      "palavras": ["\"moveis planejados\"", "\"cozinha planejada\"", "\"loja de moveis planejados\""],
+      "titulos": ["Móveis Planejados Sob Medida", "Cozinha Planejada Completa", "Visite Nosso Showroom", "Projeto 3D Para o Seu Espaço", "Acabamento de Alto Padrão", "Agende Sua Visita Hoje"],
+      "descricoes": ["Ambientes planejados desenhados para o seu espaço e a sua rotina. Agende uma visita.", "Cozinhas, dormitórios e salas sob medida, com projeto e acabamento de alto padrão."]
+    }
+  ]
+}

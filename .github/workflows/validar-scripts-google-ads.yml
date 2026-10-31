@@ -32,3 +32,16 @@ jobs:
             if (ruins.length) { console.error('Acima do limite:', ruins); process.exit(1); }
             console.log('Titulos e descricoes dentro do limite.');
           "
+      - name: Validar fila de comandos
+        run: |
+          node -e "
+            const f = JSON.parse(require('fs').readFileSync('google-ads-scripts/fila/fila.json','utf8'));
+            const ids = new Set(); let erro = false;
+            for (const c of f.comandos || []) {
+              if (!c.id || !c.conta_id || !c.acao) { console.error('Comando incompleto', c); erro = true; }
+              if (ids.has(c.id)) { console.error('id repetido', c.id); erro = true; } ids.add(c.id);
+              for (const t of c.titulos || []) if (t.length > 30) { console.error('Titulo > 30:', t); erro = true; }
+              for (const d of c.descricoes || []) if (d.length > 90) { console.error('Descricao > 90:', d); erro = true; }
+            }
+            if (erro) process.exit(1); console.log((f.comandos||[]).length + ' comando(s) valido(s).');
+          "
