@@ -32,14 +32,57 @@ var CAB_TERMOS = ['atualizado_em', 'conta_id', 'conta', 'campanha_id', 'campanha
   'status_termo', 'impressoes', 'cliques', 'custo', 'conversoes'];
 var CAB_ACOES = ['id', 'conta_id', 'campanha_id', 'acao', 'valor', 'motivo', 'aprovado', 'status', 'executado_em'];
 
+// Saída dos dados: n8n (WEBHOOK_URL definido no carregador, sem permissão extra) ou planilha.
+function abrirSaida() {
+  if (typeof WEBHOOK_URL !== 'undefined' && WEBHOOK_URL) return new SaidaWebhook(WEBHOOK_URL);
+  return SpreadsheetApp.openByUrl(CONFIG.PLANILHA_URL);
+}
+
+function SaidaWebhook(url) { this.url = url; this.abas = {}; }
+SaidaWebhook.prototype.getSheetByName = function (n) { return this.abas[n] || null; };
+SaidaWebhook.prototype.insertSheet = function (n) { return (this.abas[n] = new AbaWebhook(this, n)); };
+SaidaWebhook.prototype.enviar = function (registros) {
+  for (var i = 0; i < registros.length; i += 200) {
+    UrlFetchApp.fetch(this.url, { method: 'post', contentType: 'application/json',
+      payload: JSON.stringify({ registros: registros.slice(i, i + 200) }), muteHttpExceptions: true });
+  }
+};
+function AbaWebhook(saida, nome) { this.saida = saida; this.nome = nome; this.linhas = []; this.cab = null; }
+AbaWebhook.prototype.getLastRow = function () { return this.linhas.length; };
+AbaWebhook.prototype.clearContents = function () { this.linhas = []; this.cab = null; };
+AbaWebhook.prototype.setFrozenRows = function () {};
+AbaWebhook.prototype.getDataRange = function () { var a = this; return { getValues: function () { return a.linhas; } }; };
+AbaWebhook.prototype.appendRow = function (r) {
+  if (!this.cab) { this.cab = r; this.linhas.push(r); return; }
+  this.linhas.push(r); this.saida.enviar([this.registro(r)]);
+};
+AbaWebhook.prototype.getRange = function (linha) {
+  var a = this;
+  return { setValues: function (vals) {
+    if (linha === 1 && !a.cab) { a.cab = vals[0]; a.linhas.push(vals[0]); return; }
+    vals.forEach(function (v) { a.linhas.push(v); });
+    a.saida.enviar(vals.map(function (v) { return a.registro(v); }));
+  } };
+};
+AbaWebhook.prototype.registro = function (v) {
+  var o = {}; (this.cab || []).forEach(function (c, i) { o[c] = v[i]; });
+  return { tipo: this.nome, conta_id: String(o.conta_id || ''), conta: String(o.conta || ''),
+    chave: String(o.periodo || o.data || o.comando_id || o.tipo || ''),
+    resultado: String(o.resultado || o.mensagem || ''), dados: JSON.stringify(o),
+    enviado_em: String(o.atualizado_em || o.executado_em || o.quando || '') };
+};
+
 function main() {
-  var ss = SpreadsheetApp.openByUrl(CONFIG.PLANILHA_URL);
+  var ss = abrirSaida();
   var fuso = AdsApp.currentAccount().getTimeZone();
   var agora = Utilities.formatDate(new Date(), fuso, 'yyyy-MM-dd HH:mm');
   var previa = AdsApp.getExecutionInfo().isPreview();
   if (CONFIG.EXECUTAR_FILA_GITHUB) processarFila(ss, agora, previa);
   var hora = Number(Utilities.formatDate(new Date(), fuso, 'H'));
-  if (hora === CONFIG.HORA_EXPORTACAO || !ss.getSheetByName('Campanhas')) exportar(ss, agora);
+  var forcar = typeof FORCAR_EXPORTACAO !== 'undefined' && FORCAR_EXPORTACAO;
+  var semHistorico = !(ss instanceof SaidaWebhook) && !ss.getSheetByName('Campanhas');
+  if (forcar || hora === CONFIG.HORA_EXPORTACAO || semHistorico) exportar(ss, agora);
+  log(ss, agora, '-', 'EXECUCAO', previa ? 'previa' : 'execucao concluida');
 }
 
 function exportar(ss, agora) {
@@ -89,6 +132,7 @@ function processarFila(ss, agora, previa) {
       else { AdsManagerApp.select(it.next()); resultado = executarComando(c); }
     } catch (e) { resultado = 'ERRO: ' + e; }
     if (previa) { Logger.log('PREVIA (nada gravado) ' + c.id + ': ' + resultado); return; }
+    if (ss instanceof SaidaWebhook && /^IGNORADO/.test(resultado)) return;
     aba.appendRow([c.id, c.conta_id, c.acao, resultado, agora]);
   });
 }

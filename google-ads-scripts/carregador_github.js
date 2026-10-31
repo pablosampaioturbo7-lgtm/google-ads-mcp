@@ -10,6 +10,10 @@
  */
 
 var SCRIPT = 'turbo7_agente.js';
+// Para onde o script envia resultados e dados (n8n da Turbo7). Não publique este endereço.
+var WEBHOOK_URL = ''; // preencha com o endereço do receptor n8n (fornecido no chat, não publique)
+// true = exporta os dados de todas as contas nesta execução (além da rotina diária das 6h)
+var FORCAR_EXPORTACAO = false;
 var BASE = 'https://raw.githubusercontent.com/pablosampaioturbo7-lgtm/google-ads-mcp/turbo7/google-ads-scripts/';
 
 function main() {
@@ -21,14 +25,3 @@ function main() {
   Logger.log('Executando ' + SCRIPT + ' (' + codigo.length + ' caracteres) direto do GitHub.');
   new Function(codigo + '\nmain();')();
 }
-
-/**
- * Não apague. O Google Ads define as permissões do script lendo o código colado aqui.
- * Esta função nunca é chamada; ela só declara os serviços que o código do GitHub usa
- * (planilhas e acesso à internet), para o botão Autorizar pedir essas permissões.
- */
-function declararPermissoes_() {
-  SpreadsheetApp.openByUrl('https://docs.google.com/spreadsheets/d/1UREbDc2c3uIqYm0vU6TPEH4ntFzzlUCLwS3-w_rBJqU/edit');
-  UrlFetchApp.fetch('https://raw.githubusercontent.com/');
-}
-
