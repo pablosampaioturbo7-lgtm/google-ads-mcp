@@ -36,7 +36,8 @@ function main() {
   var ss = SpreadsheetApp.openByUrl(CONFIG.PLANILHA_URL);
   var fuso = AdsApp.currentAccount().getTimeZone();
   var agora = Utilities.formatDate(new Date(), fuso, 'yyyy-MM-dd HH:mm');
-  if (CONFIG.EXECUTAR_FILA_GITHUB) processarFila(ss, agora);
+  var previa = AdsApp.getExecutionInfo().isPreview();
+  if (CONFIG.EXECUTAR_FILA_GITHUB) processarFila(ss, agora, previa);
   var hora = Number(Utilities.formatDate(new Date(), fuso, 'H'));
   if (hora === CONFIG.HORA_EXPORTACAO || !ss.getSheetByName('Campanhas')) exportar(ss, agora);
 }
@@ -71,7 +72,7 @@ function exportar(ss, agora) {
 }
 
 // ---------- Fila de comandos vinda do GitHub ----------
-function processarFila(ss, agora) {
+function processarFila(ss, agora, previa) {
   var r = UrlFetchApp.fetch(CONFIG.FILA_URL + '?v=' + new Date().getTime(), { muteHttpExceptions: true });
   if (r.getResponseCode() !== 200) { log(ss, agora, '-', 'FILA_INDISPONIVEL', 'HTTP ' + r.getResponseCode()); return; }
   var fila = JSON.parse(r.getContentText()).comandos || [];
@@ -87,6 +88,7 @@ function processarFila(ss, agora) {
       if (!it.hasNext()) resultado = 'ERRO: conta fora da MCC';
       else { AdsManagerApp.select(it.next()); resultado = executarComando(c); }
     } catch (e) { resultado = 'ERRO: ' + e; }
+    if (previa) { Logger.log('PREVIA (nada gravado) ' + c.id + ': ' + resultado); return; }
     aba.appendRow([c.id, c.conta_id, c.acao, resultado, agora]);
   });
 }

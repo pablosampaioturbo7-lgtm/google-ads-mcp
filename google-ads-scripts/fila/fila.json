@@ -2,7 +2,7 @@
   "_leia": "Fila de comandos do agente Turbo7. O script da MCC executa cada comando uma unica vez (pelo id) e registra o resultado na aba Execucoes da planilha. So entram aqui comandos aprovados no chat.",
   "comandos": [
     {
-      "id": "2026-10-31-maison-teste-rsa-01",
+      "id": "2026-10-31-maison-teste-rsa-02",
       "conta_id": "1661166125",
       "acao": "CRIAR_GRUPO_RSA",
       "campanha_id": "23294274719",
