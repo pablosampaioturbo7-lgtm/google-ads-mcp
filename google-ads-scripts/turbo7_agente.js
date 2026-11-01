@@ -53,7 +53,7 @@ SaidaWebhook.prototype.enviar = function (registros) {
 // GitHub: grava um arquivo JSON por execução no repositório privado de resultados.
 SaidaWebhook.prototype.finalizar = function (agora) {
   if (!this.github || !this.buffer.length) return;
-  var nome = 'resultados/' + agora.replace(/[: ]/g, '-') + '-' + new Date().getTime() + '.json';
+  var nome = 'resultados/' + agora.replace(/[: ]/g, '-') + '-' + contaAtualId() + '-' + new Date().getTime() + '.json';
   var r = UrlFetchApp.fetch('https://api.github.com/repos/' + this.github.repo + '/contents/' + nome, {
     method: 'put', contentType: 'application/json', muteHttpExceptions: true,
     headers: { Authorization: 'Bearer ' + this.github.token, Accept: 'application/vnd.github+json' },
@@ -106,12 +106,14 @@ function main() {
 function exportar(ss, agora) {
   var linhas = { campanhas: [], diario: [], termos: [], contas: [] };
 
-  var contas = AdsManagerApp.accounts().get();
-  while (contas.hasNext()) {
-    var conta = contas.next();
+  var contas = ehMcc() ? AdsManagerApp.accounts().get() : null;
+  var unica = ehMcc() ? null : AdsApp.currentAccount();
+  while (unica || contas.hasNext()) {
+    var conta = unica || contas.next();
+    unica = null;
     var id = conta.getCustomerId().replace(/-/g, '');
-    if (CONFIG.CONTAS_EXCLUIDAS.indexOf(id) >= 0) continue;
-    AdsManagerApp.select(conta);
+    if (CONFIG.CONTAS_EXCLUIDAS.indexOf(id) >= 0) { if (!contas) break; continue; }
+    if (contas) AdsManagerApp.select(conta);
     linhas.contas.push([agora, id, conta.getName(), conta.getCurrencyCode()]);
     try {
       coletarCampanhas(agora, id, conta.getName(), 'LAST_7_DAYS', linhas.campanhas);
@@ -121,6 +123,7 @@ function exportar(ss, agora) {
     } catch (e) {
       log(ss, agora, id, 'ERRO_COLETA', String(e));
     }
+    if (!contas) break;
   }
 
   escrever(ss, 'Contas', ['atualizado_em', 'conta_id', 'conta', 'moeda'], linhas.contas);
@@ -145,9 +148,9 @@ function processarFila(ss, agora, previa) {
     if (!c.id || feitos[c.id]) return;
     var resultado;
     try {
-      var it = AdsManagerApp.accounts().withIds([formatarCid(c.conta_id)]).get();
-      if (!it.hasNext()) resultado = 'ERRO: conta fora da MCC';
-      else { AdsManagerApp.select(it.next()); resultado = executarComando(c); }
+      var sel = selecionarConta(c.conta_id);
+      if (sel === 'OUTRA_CONTA') return; // comando de outra conta: o script dela executa
+      resultado = sel === 'OK' ? executarComando(c) : 'ERRO: conta fora da MCC';
     } catch (e) { resultado = 'ERRO: ' + e; }
     if (previa) { Logger.log('PREVIA (nada gravado) ' + c.id + ': ' + resultado); return; }
     if (ss instanceof SaidaWebhook && /^IGNORADO/.test(resultado)) return;
@@ -238,9 +241,9 @@ function aplicarAcoes(ss, agora) {
     (porConta[cid] = porConta[cid] || []).push(i);
   }
   for (var cid in porConta) {
-    var it = AdsManagerApp.accounts().withIds([formatarCid(cid)]).get();
-    if (!it.hasNext()) { porConta[cid].forEach(function (i) { marcar(aba, i, 'ERRO: conta fora da MCC', agora); }); continue; }
-    AdsManagerApp.select(it.next());
+    var sel = selecionarConta(cid);
+    if (sel === 'OUTRA_CONTA') continue;
+    if (sel !== 'OK') { porConta[cid].forEach(function (i) { marcar(aba, i, 'ERRO: conta fora da MCC', agora); }); continue; }
     porConta[cid].forEach(function (i) {
       var l = dados[i];
       try { marcar(aba, i, executar(String(l[3]).toUpperCase(), String(l[2]), l[4]), agora); }
@@ -267,6 +270,27 @@ function executar(acao, campanhaId, valor) {
     c.addNegativeKeyword('[' + String(valor).replace(/[\[\]"]/g, '') + ']'); return 'OK';
   }
   return 'BLOQUEADO: acao desconhecida';
+}
+
+// Funciona instalado na MCC (todas as contas vinculadas) ou direto em uma conta
+// (só aquela conta, sem precisar vincular à MCC).
+var _ehMcc = null;
+function ehMcc() {
+  if (_ehMcc === null) {
+    try { AdsManagerApp.accounts().withLimit(1).get(); _ehMcc = true; } catch (e) { _ehMcc = false; }
+  }
+  return _ehMcc;
+}
+function contaAtualId() { return AdsApp.currentAccount().getCustomerId().replace(/\D/g, ''); }
+
+// Seleciona a conta: na MCC troca de conta; na conta só confirma que é ela mesma.
+function selecionarConta(id) {
+  var cid = String(id).replace(/\D/g, '');
+  if (!ehMcc()) return cid === contaAtualId() ? 'OK' : 'OUTRA_CONTA';
+  var it = AdsManagerApp.accounts().withIds([formatarCid(cid)]).get();
+  if (!it.hasNext()) return 'FORA_DA_MCC';
+  AdsManagerApp.select(it.next());
+  return 'OK';
 }
 
 // ID no formato 123-456-7890, exigido pelo AdsManagerApp.
